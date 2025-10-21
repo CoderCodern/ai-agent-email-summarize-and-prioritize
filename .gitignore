@@ -1,0 +1,19 @@
+# .NET build
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+
+# Sensitive config
+OpenAIConsole/appsettings.json
+OpenAIConsole/appsettings.*.json
+
+# Data files (optional, if you want to exclude generated data)
+OpenAIConsole/Data/*.json
