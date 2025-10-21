@@ -79,7 +79,7 @@ class EmailReader:
             if isinstance(part, bytes):
                 try:
                     decoded_string += part.decode(encoding or 'utf-8')
-                except:
+                except (UnicodeDecodeError, LookupError):
                     decoded_string += part.decode('utf-8', errors='ignore')
             else:
                 decoded_string += part
@@ -107,12 +107,12 @@ class EmailReader:
                     try:
                         body = part.get_payload(decode=True).decode()
                         break
-                    except:
+                    except (UnicodeDecodeError, AttributeError):
                         pass
         else:
             try:
                 body = msg.get_payload(decode=True).decode()
-            except:
+            except (UnicodeDecodeError, AttributeError):
                 pass
         
         return body
@@ -173,7 +173,7 @@ class EmailReader:
                     # Parse date
                     try:
                         date = email_utils.parsedate_to_datetime(date_str)
-                    except:
+                    except (TypeError, ValueError):
                         date = datetime.now()
                     
                     email_data = {

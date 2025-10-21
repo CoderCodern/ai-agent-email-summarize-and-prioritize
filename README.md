@@ -67,6 +67,15 @@ IMAP_PORT=993
 
 ## Usage
 
+### Demo Mode
+
+Try the demo to see how the system works without connecting to a real email server:
+```bash
+python demo.py
+```
+
+This will show you sample processed emails with summaries and categorization.
+
 ### Basic Usage
 
 Process all unread emails:
