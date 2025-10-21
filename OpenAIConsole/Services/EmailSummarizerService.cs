@@ -13,7 +13,7 @@ namespace OpenAIConsole.Services
     {
         Task<List<Email>> GetEmailsAsync();
         Task<string> SummarizeEmailAsync(Email email);
-        Task SummarizeAllEmailsAsync(int maxEmails = -1);
+        Task SummarizeAllEmailsAsync(int maxEmails = -1, int batchSize = 5);
         Task SaveSummarizedEmailsAsync(List<Email> summarizedEmails);
     }
 
@@ -57,7 +57,79 @@ namespace OpenAIConsole.Services
             public double? Cost { get; set; }
         }
 
-        private async Task<EmailAnalysisResult> AnalyzeEmail(Email email)
+        // AnalyzeEmail with chunking and hierarchical summarization for long emails
+        private async Task<EmailAnalysisResult> AnalyzeEmail(Email email, int maxTokens = 1500)
+        {
+            // Estimate token count (rough: 1 token ≈ 4 chars)
+            int tokenLimit = maxTokens;
+            string content = email.Content;
+            int chunkSize = tokenLimit * 4; // rough char count per chunk
+
+            // Split content into chunks
+            var chunks = new List<string>();
+            for (int i = 0; i < content.Length; i += chunkSize)
+                chunks.Add(content.Substring(i, Math.Min(chunkSize, content.Length - i)));
+
+            // If only one chunk, analyze and return directly
+            if (chunks.Count == 1)
+                return await AnalyzeEmailSingle(email);
+
+            Console.WriteLine($"Chunking email '{email.Subject}' (length: {content.Length}) into {chunks.Count} chunks of {chunkSize} chars.");
+
+            // Analyze each chunk and collect results
+            var chunkResults = new List<EmailAnalysisResult>(chunks.Count);
+            var chunkSummaries = new List<string>(chunks.Count);
+            foreach (var chunk in chunks)
+            {
+                if (chunk.Length > chunkSize)
+                    Console.WriteLine($"Warning: Chunk size exceeded for chunk in '{email.Subject}'. Length: {chunk.Length}");
+                var chunkEmail = new Email
+                {
+                    From = email.From,
+                    To = email.To,
+                    Subject = email.Subject,
+                    Type = email.Type,
+                    Content = chunk
+                };
+                var result = await AnalyzeEmailSingle(chunkEmail);
+                if (result == null || string.IsNullOrWhiteSpace(result?.Summary))
+                    Console.WriteLine($"Warning: Empty or invalid AI response for chunk in '{email.Subject}'.");
+                chunkResults.Add(result ?? new EmailAnalysisResult { Summary = "", IsImportant = false, ImportanceReason = "No AI response", PromptTokens = 0, CompletionTokens = 0, TotalTokens = 0, Cost = 0.0 });
+                chunkSummaries.Add(result?.Summary ?? "");
+            }
+
+            // Hierarchical summarization: summarize the chunk summaries
+            var summaryContent = string.Join("\n", chunkSummaries);
+            var summaryEmail = new Email
+            {
+                From = email.From,
+                To = email.To,
+                Subject = email.Subject,
+                Type = email.Type,
+                Content = summaryContent
+            };
+            var finalResult = await AnalyzeEmailSingle(summaryEmail);
+
+            // Aggregate token usage and cost
+            int? promptTokens = chunkResults.Sum(r => r.PromptTokens ?? 0) + (finalResult.PromptTokens ?? 0);
+            int? completionTokens = chunkResults.Sum(r => r.CompletionTokens ?? 0) + (finalResult.CompletionTokens ?? 0);
+            int? totalTokens = chunkResults.Sum(r => r.TotalTokens ?? 0) + (finalResult.TotalTokens ?? 0);
+            double? cost = chunkResults.Sum(r => r.Cost ?? 0) + (finalResult.Cost ?? 0);
+
+            return new EmailAnalysisResult
+            {
+                Summary = finalResult.Summary,
+                IsImportant = finalResult.IsImportant,
+                ImportanceReason = finalResult.ImportanceReason,
+                PromptTokens = promptTokens,
+                CompletionTokens = completionTokens,
+                TotalTokens = totalTokens,
+                Cost = cost
+            };
+        }
+
+        // The original AnalyzeEmail logic, now private for chunking use
+        private async Task<EmailAnalysisResult> AnalyzeEmailSingle(Email email)
         {
             try
             {
@@ -135,7 +207,11 @@ namespace OpenAIConsole.Services
                     {
                         Summary = fallbackSummary,
                         IsImportant = isImportant,
-                        ImportanceReason = fallbackReason
+                        ImportanceReason = fallbackReason,
+                        PromptTokens = 0,
+                        CompletionTokens = 0,
+                        TotalTokens = 0,
+                        Cost = 0.0
                     };
                 }
 
@@ -169,24 +245,29 @@ namespace OpenAIConsole.Services
             return analysis.Summary;
         }
 
-        public async Task SummarizeAllEmailsAsync(int maxEmails = -1)
+        public async Task SummarizeAllEmailsAsync(int maxEmails = -1, int batchSize = 5)
         {
             var emails = await GetEmailsAsync();
             if (maxEmails > 0)
                 emails = emails.Take(maxEmails).ToList();
 
             var summarizedEmails = new List<Email>();
-            foreach (var email in emails)
+            for (int i = 0; i < emails.Count; i += batchSize)
             {
-                var analysis = await AnalyzeEmail(email);
-                email.Summary = analysis.Summary;
-                email.IsImportant = analysis.IsImportant;
-                email.ImportanceReason = analysis.ImportanceReason;
-                email.PromptTokens = analysis.PromptTokens;
-                email.CompletionTokens = analysis.CompletionTokens;
-                email.TotalTokens = analysis.TotalTokens;
-                email.Cost = analysis.Cost;
-                summarizedEmails.Add(email);
+                var batch = emails.Skip(i).Take(batchSize).ToList();
+                var tasks = batch.Select(async email => {
+                    var analysis = await AnalyzeEmail(email);
+                    email.Summary = analysis.Summary;
+                    email.IsImportant = analysis.IsImportant;
+                    email.ImportanceReason = analysis.ImportanceReason;
+                    email.PromptTokens = analysis.PromptTokens;
+                    email.CompletionTokens = analysis.CompletionTokens;
+                    email.TotalTokens = analysis.TotalTokens;
+                    email.Cost = analysis.Cost;
+                    return email;
+                });
+                var results = await Task.WhenAll(tasks);
+                summarizedEmails.AddRange(results);
             }
             await SaveSummarizedEmailsAsync(summarizedEmails);
         }

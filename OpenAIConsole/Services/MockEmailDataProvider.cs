@@ -91,6 +91,7 @@ public class MockEmailDataProvider : IEmailDataProvider
             "API Integration"
         };
 
+
         for (int i = 1; i <= count; i++)
         {
             var type = types[random.Next(types.Length)];
@@ -98,6 +99,15 @@ public class MockEmailDataProvider : IEmailDataProvider
             var fromName = names[random.Next(names.Length)];
             var subjectTemplate = subjects[random.Next(subjects.Length)];
             var topic = topics[random.Next(topics.Length)];
+
+            string content = GenerateContent(type, topic);
+            // For the first 4 emails, make the content very long for chunking test
+            if (i <= 4)
+            {
+                content += "\n" + new string((char)('A' + (i - 1)), 2000);
+                content += "\n" + new string((char)('E' + (i - 1)), 2000);
+                content += "\n" + new string((char)('I' + (i - 1)), 2000);
+            }
 
             var email = new Email
             {
@@ -107,7 +117,7 @@ public class MockEmailDataProvider : IEmailDataProvider
                 Subject = string.Format(subjectTemplate, topic),
                 Date = DateTime.UtcNow.AddHours(-i),
                 Type = type,
-                Content = GenerateContent(type, topic)
+                Content = content
             };
 
             mockEmails.Add(email);

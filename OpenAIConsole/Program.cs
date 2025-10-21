@@ -31,6 +31,7 @@ Directory.CreateDirectory(dataDirectory);
 var mockEmailsPath = Path.Combine(dataDirectory, "mock-emails.json");
 
 
+
 // Get number of mock emails from user with validation
 int emailCount = 100;
 while (true)
@@ -47,6 +48,24 @@ while (true)
         break;
     }
     Console.WriteLine("Invalid input. Please enter a positive integer.");
+}
+
+// Prompt for batch size, suggest not over 10
+int batchSize = 5;
+while (true)
+{
+    Console.Write("Enter batch size for parallel summarization (suggested: 5, max: 10): ");
+    var input = Console.ReadLine();
+    if (string.IsNullOrWhiteSpace(input))
+    {
+        batchSize = 5;
+        break;
+    }
+    if (int.TryParse(input, out batchSize) && batchSize > 0 && batchSize <= 10)
+    {
+        break;
+    }
+    Console.WriteLine("Invalid input. Please enter a positive integer not greater than 10.");
 }
 
 
@@ -78,7 +97,7 @@ try
 
     if (Console.ReadKey().Key != ConsoleKey.Escape)
     {
-        await emailSummarizer.SummarizeAllEmailsAsync();
+        await emailSummarizer.SummarizeAllEmailsAsync(-1, batchSize);
         logger.LogInformation("Email summarization completed!");
         logger.LogInformation("Original emails remain in: Data/mock-emails.json");
         logger.LogInformation("Important and non-important emails have been saved to separate files");
